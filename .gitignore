@@ -20,3 +20,9 @@ dist/
 .vscode/
 .idea/
 .DS_Store
+
+# Local databases (idempotency store)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3

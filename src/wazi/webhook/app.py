@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
@@ -69,6 +70,7 @@ def create_app(
     *,
     store: IdempotencyStore | None = None,
     dispatcher: MessageDispatcher | None = None,
+    lifespan: Any = None,
 ) -> FastAPI:
     """Build the app. All collaborators can be injected, which keeps tests offline and simple."""
     settings = settings if settings is not None else Settings.from_env()
@@ -83,7 +85,13 @@ def create_app(
     dispatcher = dispatcher if dispatcher is not None else NullDispatcher()
 
     # No interactive docs or OpenAPI schema: a webhook needs no extra public surface.
-    app = FastAPI(title="Wazi webhook", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(
+        title="Wazi webhook",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=lifespan,
+    )
 
     @app.get(WEBHOOK_PATH)
     async def verify(request: Request) -> Response:

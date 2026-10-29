@@ -8,6 +8,7 @@ from wazi.messaging.models import (
     MessageType,
     NormalizationResult,
     NormalizedMessage,
+    OutboundReply,
     PayloadError,
 )
 from wazi.messaging.normalizer import normalize_payload
@@ -16,6 +17,7 @@ __all__ = [
     "MessageType",
     "NormalizationResult",
     "NormalizedMessage",
+    "OutboundReply",
     "PayloadError",
     "normalize_payload",
 ]

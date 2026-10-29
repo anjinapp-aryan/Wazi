@@ -13,9 +13,13 @@ violation as "duplicate" (MIT; pattern only, no code copied).
 ``release`` exists for failure handling: if the downstream hand-off fails after a claim,
 the key is released so that Meta's retry of the same message is not mistaken for a duplicate.
 
-``InMemoryIdempotencyStore`` is for a single process and is lost on restart. That is fine for
-Phase 4 and for tests. A multi-process or restart-safe store (a database, a cache server...)
-only has to implement the same two methods; nothing else in Wazi depends on the technology.
+Phase 5 adds an optional second interface, ``CompletionRecorder``: once the webhook has
+acknowledged a message, the background worker records whether processing ended in ``done`` or
+``failed``. A key that stays in ``claimed`` after a restart means "accepted but never finished",
+which is how a lost-in-a-crash message becomes visible (recovery itself is future work).
+
+``InMemoryIdempotencyStore`` is for a single process and is lost on restart. The restart-safe
+version is ``SqliteIdempotencyStore``; both satisfy the same protocols.
 """
 
 from __future__ import annotations
@@ -25,6 +29,10 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from typing import Protocol, runtime_checkable
+
+STATE_CLAIMED = "claimed"
+STATE_DONE = "done"
+STATE_FAILED = "failed"
 
 
 @runtime_checkable
@@ -36,6 +44,13 @@ class IdempotencyStore(Protocol):
     def release(self, key: str) -> None:
         """Forget ``key`` (used when processing failed and a retry should be allowed)."""
         ...
+
+
+@runtime_checkable
+class CompletionRecorder(Protocol):
+    def mark_done(self, key: str) -> None: ...
+
+    def mark_failed(self, key: str) -> None: ...
 
 
 class InMemoryIdempotencyStore:
@@ -60,7 +75,8 @@ class InMemoryIdempotencyStore:
         self._max_entries = max_entries
         self._ttl = ttl_seconds
         self._clock = clock
-        self._claimed: OrderedDict[str, float] = OrderedDict()  # key -> claim time, oldest first
+        # key -> [claim time, state], ordered oldest first
+        self._claimed: OrderedDict[str, list] = OrderedDict()
         self._lock = threading.Lock()
 
     def claim(self, key: str) -> bool:
@@ -69,7 +85,7 @@ class InMemoryIdempotencyStore:
             self._expire(now)
             if key in self._claimed:
                 return False
-            self._claimed[key] = now
+            self._claimed[key] = [now, STATE_CLAIMED]
             while len(self._claimed) > self._max_entries:
                 self._claimed.popitem(last=False)
             return True
@@ -78,10 +94,27 @@ class InMemoryIdempotencyStore:
         with self._lock:
             self._claimed.pop(key, None)
 
+    def mark_done(self, key: str) -> None:
+        self._set_state(key, STATE_DONE)
+
+    def mark_failed(self, key: str) -> None:
+        self._set_state(key, STATE_FAILED)
+
+    def state_of(self, key: str) -> str | None:
+        with self._lock:
+            entry = self._claimed.get(key)
+            return entry[1] if entry else None
+
+    def _set_state(self, key: str, state: str) -> None:
+        with self._lock:
+            entry = self._claimed.get(key)
+            if entry is not None:
+                entry[1] = state
+
     def _expire(self, now: float) -> None:
         # Entries are ordered by claim time, so expired ones are always at the front.
         while self._claimed:
-            oldest_key, claimed_at = next(iter(self._claimed.items()))
+            oldest_key, (claimed_at, _state) = next(iter(self._claimed.items()))
             if now - claimed_at < self._ttl:
                 break
             del self._claimed[oldest_key]

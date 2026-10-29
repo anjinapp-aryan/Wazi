@@ -58,6 +58,25 @@ class NormalizedMessage:
 
 
 @dataclass(frozen=True, slots=True)
+class OutboundReply:
+    """A channel-neutral reply. The agent side produces these and never builds Meta JSON.
+
+    recipient_id  the user's WhatsApp id (copied from ``NormalizedMessage.sender_id``)
+    text          the reply text
+    in_reply_to   the inbound message id this answers (for tracing only)
+
+    ``repr`` hides the recipient and the text for the same reason as ``NormalizedMessage``.
+    """
+
+    recipient_id: str
+    text: str
+    in_reply_to: str | None = None
+
+    def __repr__(self) -> str:
+        return f"OutboundReply(chars={len(self.text)})"
+
+
+@dataclass(frozen=True, slots=True)
 class NormalizationResult:
     """Everything extracted from one webhook body."""
 
