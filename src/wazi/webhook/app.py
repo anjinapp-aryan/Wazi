@@ -166,7 +166,7 @@ def create_app(
                 )
                 continue
             accepted += 1
-            logger.debug("accepted id=%s", fingerprint(message.message_id))
+            logger.info("message queued id=%s", fingerprint(message.message_id))
 
         if failures:
             return _error(500, "internal_error")  # 5xx on purpose: a retry can succeed

@@ -31,7 +31,10 @@ packages = ["src/wazi"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers -m 'not live_meta'"
+markers = [
+    "live_meta: talks to the REAL Meta Cloud API; sends a real message. Opt-in: set WAZI_LIVE_META=1 and run `pytest -m live_meta`.",
+]
 
 [tool.ruff]
 line-length = 100

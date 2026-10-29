@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Wazi is a **learning project** building a WhatsApp AI agent step by step. The mentor/owner is the human user; work is organised in gated phases (0-10, listed in `docs/PROJECT_CONSTITUTION.md` §14). Execute only the phase you are asked to, report evidence, then stop. Never start the next phase on your own.
 
-Current state: Phases 0-5 done (Phase 5 = walking skeleton, awaiting mentor review). Code covers the secure webhook ingress, a persistent idempotency store, a background worker, an outbound WhatsApp client and a fake echo responder. There is no agent, LLM, Qdrant, RAG, LangGraph, memory, tools or deployment yet, and nothing has ever been run against the real Meta API.
+Current state: Phases 0-5 done; Phase 6 (first real Meta contact) is **BLOCKED** on Meta credentials: preparation, tests and a runbook exist in `docs/PHASE_6_META_INTEGRATION.md`, but nothing has run against the real Meta platform. Code covers the secure webhook ingress, a persistent idempotency store, a background worker, an outbound WhatsApp client and a fake echo responder. There is no agent, LLM, Qdrant, RAG, LangGraph, memory, tools or deployment yet, and nothing has ever been run against the real Meta API.
 
 Project rules that shape every change (full text in `docs/PROJECT_CONSTITUTION.md`):
 - **REUSE → ADAPT → COMPOSE → BUILD.** Run a short reuse/licence check before writing anything significant, and justify any new dependency.
@@ -19,7 +19,7 @@ Environment is `uv` with a project-local `.venv` (Python >=3.12). On this Window
 
 ```bash
 uv sync                          # install from uv.lock (add --extra serve for uvicorn)
-.venv/Scripts/python -m pytest -q                      # all tests (253, offline, ~2 s)
+.venv/Scripts/python -m pytest -q                      # all tests (264, offline, ~2 s; 2 live tests deselected)
 .venv/Scripts/python -m pytest tests/test_signature.py::test_valid_signature_accepted   # one test
 .venv/Scripts/python -m pytest -k handshake            # by keyword
 .venv/Scripts/python -m ruff check .                   # lint
@@ -30,8 +30,12 @@ Optional local server (loopback only; use made-up values, never real secrets):
 
 ```bash
 WAZI_WHATSAPP_VERIFY_TOKEN=x WAZI_WHATSAPP_APP_SECRET=y WAZI_IDEMPOTENCY_DB=wazi.db \
-  .venv/Scripts/python -m uvicorn --factory wazi.bootstrap:build_app --host 127.0.0.1 --port 8099 --no-access-log
+  .venv/Scripts/python -m uvicorn --factory wazi.bootstrap:build_server_app --host 127.0.0.1 --port 8099 --no-access-log
 ```
+
+`build_server_app` = `configure_logging()` + `build_app()`; keep logging configuration out of `build_app` (tests capture logs at DEBUG and would silently weaken). `scripts/simulate_inbound.py` posts a correctly signed Meta-style message to a loopback webhook (reads `WAZI_WHATSAPP_APP_SECRET` from the environment; `--message-id` replays an id for duplicate tests). It proves Wazi, not Meta.
+
+Opt-in live Meta tests: `WAZI_LIVE_META=1 ... .venv/Scripts/python -m pytest -m live_meta tests/live` (deselected by default via `pyproject.toml`; one of them sends a real WhatsApp message; never executed so far).
 
 Without both `WAZI_WHATSAPP_ACCESS_TOKEN` and `WAZI_WHATSAPP_PHONE_NUMBER_ID` the outbound side is a dry-run (nothing is sent). When stopping a server you started, kill it by its exact PID, never with a broad `taskkill /IM python.exe`.
 
@@ -58,6 +62,7 @@ Composition is in `bootstrap.py` (`build_app`), the only module that knows the c
 - **Idempotency is `claim(key) -> bool` / `release(key)`**, atomic by design (not has+mark), plus the optional `CompletionRecorder` (`mark_done`/`mark_failed`). `SqliteIdempotencyStore` (stdlib) is restart-safe and stores only key, state and timestamps; `InMemoryIdempotencyStore` is lost on restart.
 - **Outbound** (`outbound/client.py`) makes one HTTP attempt per `send` and classifies failures as `SendError(retryable=...)`: network errors, 429, 5xx and a short list of Meta codes are retryable; 131047 (24-hour window) and auth errors are permanent. It never puts the token, recipient, text or response body in errors or logs. Retries live in the worker, not the client. Default Graph version `v26.0`.
 - `NormalizedMessage` (`messaging/models.py`) is the only message type downstream code should see; it intentionally omits the raw payload and hides sender/text in `repr`. Only the `type` string and `text.body` are read from Meta payloads.
+- **Limits come from Meta's docs** (checked 2026-10-29): webhook payloads up to 3 MB (default body limit 4 MiB), batches up to 1000 updates (default `max_pending` 1000), Graph API default `v26.0` (single constant `DEFAULT_GRAPH_API_VERSION`). Re-check them when Meta's docs change; do not lower them without a reason.
 - Fail closed on missing config: no app secret => POST 503; no verify token => GET 403 (never `None == None`). Settings come from `WAZI_WHATSAPP_VERIFY_TOKEN` / `WAZI_WHATSAPP_APP_SECRET` (`configuration/settings.py`); secret fields are excluded from `repr`.
 
 ## Testing conventions

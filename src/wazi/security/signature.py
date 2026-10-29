@@ -1,16 +1,17 @@
 """Verification of Meta's ``X-Hub-Signature-256`` webhook signature.
 
-What Meta documents (developers.facebook.com, Graph API webhooks "Validating Payloads"):
-  * the signature is sent in the ``X-Hub-Signature-256`` header,
-  * its value is the signature preceded by ``sha256=``,
-  * it is a SHA256 signature generated with the payload and the app's **App Secret**.
+What Meta documents (checked 2026-10-29):
+  * Graph API webhooks "Validating Payloads": the signature is sent in the ``X-Hub-Signature-256``
+    header, "preceded with ``sha256=``", generated with "the payload and your app's App Secret";
+  * WhatsApp "Create a webhook endpoint" page: "HMAC-SHA256 hash, calculated using the post body
+    payload and your app secret as the secret key".
 
-What the page does not spell out, and what this module therefore takes from the standard
-construction used by independent open-source implementations (pywa, AleBrito's
-whatsapp-ai-agent; both MIT) and Meta's own archived samples: the signature is
-HMAC-SHA256, keyed with the App Secret, computed over the **exact raw bytes** of the HTTP
-request body. This has not been checked against a live Meta delivery (no credentials in
-Phase 4); it is covered by tests against an independent published HMAC test vector.
+What the pages still do not state: that the bytes are the **raw** HTTP body (they say "JSON
+payload"), and nothing is said about Unicode escaping. Signing the exact received bytes is the
+standard construction used by independent open-source implementations (pywa, AleBrito's
+whatsapp-ai-agent; both MIT) and is the only construction that cannot be fooled by
+re-serialisation. It has not been checked against a live Meta delivery (Phase 6 is the first
+chance); it is covered by tests against an independent published HMAC test vector.
 
 Rules enforced here:
   * fail closed: no secret, no header, wrong prefix, wrong length, non-hex, or mismatch => False;

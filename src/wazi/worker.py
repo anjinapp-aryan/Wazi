@@ -67,7 +67,7 @@ class BackgroundDispatcher:
         completion: CompletionRecorder | None = None,
         executor: Executor | None = None,
         max_workers: int = 4,
-        max_pending: int = 100,
+        max_pending: int = 1000,
         retry: RetryPolicy | None = None,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -143,8 +143,10 @@ class BackgroundDispatcher:
             return
         for attempt in range(1, self._retry.max_attempts + 1):
             try:
-                self._sender.send(reply)
-                logger.debug("reply sent id=%s attempt=%d", tag, attempt)
+                result = self._sender.send(reply)
+                # Trace: webhook "message queued id=<tag>" -> here -> Meta's id for OUR reply.
+                sent_tag = fingerprint(result.message_id) if result.message_id else "unknown"
+                logger.info("reply sent id=%s sent_id=%s attempt=%d", tag, sent_tag, attempt)
                 return
             except SendError as err:
                 last_attempt = attempt >= self._retry.max_attempts

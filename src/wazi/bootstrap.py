@@ -1,7 +1,7 @@
 """Composition root: the one place that knows which concrete pieces are plugged together.
 
 Run locally with:
-    uvicorn --factory wazi.bootstrap:build_app --host 127.0.0.1 --port 8099 --no-access-log
+    uvicorn --factory wazi.bootstrap:build_server_app --host 127.0.0.1 --port 8099 --no-access-log
 
 Choices made here, from configuration:
 * idempotency store: SQLite file if ``WAZI_IDEMPOTENCY_DB`` is set, else in-memory;
@@ -13,6 +13,7 @@ Choices made here, from configuration:
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -31,6 +32,32 @@ from wazi.webhook import create_app
 from wazi.worker import BackgroundDispatcher, RetryPolicy
 
 logger = logging.getLogger("wazi.bootstrap")
+
+ENV_LOG_LEVEL = "WAZI_LOG_LEVEL"
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+
+
+def configure_logging(level: str = "INFO") -> None:
+    """Make Wazi's own log lines visible when running as a server. Idempotent.
+
+    Wazi's loggers never contain secrets or personal data (tests enforce it), so INFO is safe to
+    print. Deliberately NOT called by ``build_app``: the test-suite captures logs at DEBUG and
+    must not have the "wazi" logger level changed under it.
+    """
+    wazi_logger = logging.getLogger("wazi")
+    wazi_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    if not any(getattr(h, "_wazi", False) for h in wazi_logger.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+        handler._wazi = True  # type: ignore[attr-defined]
+        wazi_logger.addHandler(handler)
+        wazi_logger.propagate = False  # avoid duplicate lines through the root logger
+
+
+def build_server_app() -> FastAPI:
+    """Entry point for ``uvicorn --factory``: logging configured, then the normal app."""
+    configure_logging(os.environ.get(ENV_LOG_LEVEL, "INFO"))
+    return build_app()
 
 
 def build_app(

@@ -21,7 +21,12 @@ ENV_PHONE_NUMBER_ID = "WAZI_WHATSAPP_PHONE_NUMBER_ID"
 ENV_GRAPH_API_VERSION = "WAZI_GRAPH_API_VERSION"
 ENV_IDEMPOTENCY_DB = "WAZI_IDEMPOTENCY_DB"
 
-DEFAULT_MAX_BODY_BYTES = 1_048_576  # 1 MiB. Real WhatsApp payloads are a few KiB.
+# Meta documents "Webhook payloads can be up to 3 MB" (WhatsApp webhooks pages, checked 2026-10-29);
+# 4 MiB leaves headroom. A smaller limit would 413 a legitimate delivery and Meta would retry it
+# for days. Typical payloads are a few KiB.
+DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024
+# Meta documents batches of "a maximum of 1000 updates", so one maximal batch fits an idle queue.
+DEFAULT_MAX_PENDING = 1000
 DEFAULT_IDEMPOTENCY_MAX_ENTRIES = 50_000
 # Meta documents retries for up to 7 days (WhatsApp webhooks page); keep ids at least that long.
 DEFAULT_IDEMPOTENCY_TTL_SECONDS = 7 * 24 * 3600
@@ -53,7 +58,7 @@ class Settings:
     idempotency_db_path: str | None = None
     # Background processing
     worker_threads: int = 4
-    max_pending: int = 100
+    max_pending: int = DEFAULT_MAX_PENDING
     outbound_max_attempts: int = 3
 
     @classmethod
